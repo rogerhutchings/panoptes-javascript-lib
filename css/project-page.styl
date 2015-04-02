@@ -1,0 +1,74 @@
+.on-project-page
+  background: FOREGROUND
+  color: BACKGROUND
+
+.project-page
+  display: flex
+  flex: 1 0 auto
+  flex-direction: column
+
+  .minor-button
+    color: white
+    background: #424242
+
+    &:hover
+      background: lighten(#424242, 20%)
+
+.project-background
+  // A custom background-image is provided by the project.
+  background-position: 50% 40%
+  background-size: cover
+  bottom: 0
+  left: 0
+  pointer-events: none
+  position: fixed
+  right: 0
+  top: 0
+  z-index: -1
+
+  &:not([style*="background-image"])
+    background-stripes: rgba(black, 0) rgba(white, 0.1) 10%
+
+  &::after
+    background: radial-gradient(rgba(black, 0.2), rgba(black, 0.8))
+    content: ""
+    height: 100%
+    left: 0
+    position: absolute
+    top: 0
+    width: 100%
+
+.project-nav
+  margin-left: 0
+  margin-top: 2em
+  text-align: left
+
+  .tabbed-content-tab
+    position: relative
+
+  .avatar
+    height: 4em
+    margin: -2em 1vw -2em 0
+    vertical-align: middle
+    width: 4em
+
+.project-home-page
+  display: flex
+  flex-direction: column
+  flex: 1 0 auto
+
+  .call-to-action-container
+    align-items: center;
+    display flex
+    flex: 1 0 auto
+    flex-direction: column
+    justify-content: center;
+
+  .description
+    font-size: 1.5em
+
+  .introduction
+    column-width: 30em
+
+    > :first-child
+      margin-top: 0

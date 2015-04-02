@@ -1,0 +1,45 @@
+html
+  background: white
+  color: FOREGROUND
+  font: 400 15px/1.5 "Open Sans", "Gill Sans", Arial, sans-serif
+
+.attribution
+  font-size: 0.7em
+  opacity: 0.7
+  text-align: center
+
+  &:last-child
+    column-span: all
+
+.partners
+  text-align: center
+
+  &:last-child
+    column-span: all
+
+  img
+    max-width: 100%
+
+hr
+  border: 0 solid rgba(gray, 0.5)
+  border-top-width: 1px
+  margin: 1em 0
+
+a
+  color: MAIN_HIGHLIGHT
+
+.emoji
+  max-height: 1em
+
+h1,
+h2,
+h3,
+h4
+  font-smoothing: antialiased
+  font-weight: bold
+  margin: 0
+
+img
+  &:not([src]),
+  &[src=""]
+    background-stripes: lighten(MAIN_HIGHLIGHT, 20%) darken(SECOND_HIGHLIGHT, 20%) 20%
