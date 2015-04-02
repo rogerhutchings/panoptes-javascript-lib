@@ -3,5 +3,6 @@ All notable changes to this project will be documented in this file. This projec
 
 ## [Unreleased][unreleased]
 ### Added
-- The original files from the `Panoptes-Front-End` repo, minus things like styling, front-end components etc.
+- The original files from the [Panoptes-Front-End](https://github.com/zooniverse/Panoptes-Front-End) repo @ 9b58eac431, minus things like styling, front-end components etc.
 - This CHANGELOG file
+- Bower support

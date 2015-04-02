@@ -10,6 +10,8 @@ Bower: `bower install panoptes-sdk`
 
 ## Development
 
+To build a new version, run `npm run build`.
+
 ### Conventions
 
 - This project adheres to [Semantic Versioning](http://semver.org/)

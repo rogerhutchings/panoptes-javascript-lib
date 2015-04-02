@@ -1,0 +1,10 @@
+{
+  "name": "panoptes-sdk",
+  "version": "0.0.1",
+  "homepage": "https://github.com/rogerhutchings/panoptes-sdk",
+  "authors": [
+    "Roger Hutchings <roger@hutchin.gs>"
+  ],
+  "description": "A wrapper around the zooAuth and zooAPI modules by @brian-c.",
+  "main": "./dist/panoptes-sdk.js"
+}
