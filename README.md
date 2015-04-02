@@ -1,4 +1,4 @@
-# Panoptes SDK
+# Panoptes Javascript Library
 
 A wrapper around the zooAuth and zooAPI modules by @brian-c.
 
