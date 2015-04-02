@@ -1,20 +1,30 @@
 {
-  "name": "panoptes-javascript-lib",
-  "version": "0.0.1",
-  "dependencies": {
-    "json-api-client": "0.2.3"
-  },
-  "devDependencies": {
-    "browserify": "9.0.4",
-    "coffeeify": "1.0.0"
-  },
-  "scripts": {
-    "build": "./node_modules/.bin/browserify --require ./src/index.coffee --extension .coffee > ./dist/panoptes-javascript-lib.js --standalone panoptes"
-  },
-  "browserify": {
-    "transform": [
-      "coffeeify"
-    ]
-  },
-  "main": "./dist/panoptes-javascript-lib.js"
+    "name": "panoptes-javascript-lib",
+    "version": "0.0.1",
+    "description": "A wrapper around the zooAuth and zooAPI modules by @brian-c.",
+    "keywords": ["panoptes", "zooniverse", "javascript"],
+    "homepage": "https://github.com/rogerhutchings/panoptes-javascript-lib",
+    "bugs": {
+       "url": "https://github.com/rogerhutchings/panoptes-javascript-lib/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git@github.com:rogerhutchings/panoptes-javascript-lib.git"
+    },
+    "dependencies": {
+        "json-api-client": "0.2.3"
+    },
+    "devDependencies": {
+        "browserify": "9.0.4",
+        "coffeeify": "1.0.0"
+    },
+    "scripts": {
+        "build": "./node_modules/.bin/browserify --require ./lib/index.coffee --extension .coffee > ./dist/panoptes-javascript-lib.js --standalone panoptes"
+    },
+    "browserify": {
+        "transform": [
+            "coffeeify"
+        ]
+    },
+    "main": "./dist/panoptes-javascript-lib.js"
 }
