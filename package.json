@@ -1,6 +1,6 @@
 {
     "name": "panoptes-javascript-lib",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "description": "A wrapper around the zooAuth and zooAPI modules by @brian-c.",
     "keywords": ["panoptes", "zooniverse", "javascript"],
     "homepage": "https://github.com/rogerhutchings/panoptes-javascript-lib",
