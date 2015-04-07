@@ -4,9 +4,9 @@ A wrapper around the zooAuth and zooAPI modules by @brian-c.
 
 ## Installation
 
-Node: `npm install panoptes-sdk`
+Node: `npm install panoptes-javascript-lib`
 
-Bower: `bower install panoptes-sdk`
+Bower: `bower install panoptes-javascript-lib`
 
 ## Development
 
