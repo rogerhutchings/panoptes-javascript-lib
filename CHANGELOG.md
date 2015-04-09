@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file. This projec
 ### Added
 - Checklist for publishing a new version added to README.md
 
+### Changed
+- Fixed installation instructions in README.md
+
 ## [0.0.2] - 2015-04-02
 ### Changed
 - README to reflect new title
