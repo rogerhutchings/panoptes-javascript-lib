@@ -1,4 +1,534 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.panoptes = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+var CSRF_TOKEN_PATTERN, DELETE_METHOD_OVERRIDE_HEADERS, JSON_HEADERS, Model, TOKEN_EXPIRATION_ALLOWANCE, client, config, makeHTTPRequest, ref;
+
+ref = require('json-api-client'), Model = ref.Model, makeHTTPRequest = ref.makeHTTPRequest;
+
+config = require('./config');
+
+client = require('./client');
+
+JSON_HEADERS = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json'
+};
+
+DELETE_METHOD_OVERRIDE_HEADERS = Object.create(JSON_HEADERS);
+
+DELETE_METHOD_OVERRIDE_HEADERS['X-HTTP-Method-Override'] = 'DELETE';
+
+CSRF_TOKEN_PATTERN = (function() {
+  var CONTENT_ATTR, NAME_ATTR;
+  NAME_ATTR = 'name=[\'"]csrf-token[\'"]';
+  CONTENT_ATTR = 'content=[\'"](.+)[\'"]';
+  return RegExp(NAME_ATTR + "\\s*" + CONTENT_ATTR + "|" + CONTENT_ATTR + "\\s*" + NAME_ATTR);
+})();
+
+TOKEN_EXPIRATION_ALLOWANCE = 10 * 1000;
+
+module.exports = new Model({
+  _currentUserPromise: null,
+  _bearerToken: '',
+  _bearerRefreshTimeout: NaN,
+  _getAuthToken: function() {
+    if (typeof console !== "undefined" && console !== null) {
+      console.log('Getting auth token');
+    }
+    return makeHTTPRequest('GET', config.host + ("/?now=" + (Date.now())), null, {
+      'Accept': 'text/html'
+    }).then(function(request) {
+      var _, authToken, authTokenMatch1, authTokenMatch2, ref1;
+      ref1 = request.responseText.match(CSRF_TOKEN_PATTERN), _ = ref1[0], authTokenMatch1 = ref1[1], authTokenMatch2 = ref1[2];
+      authToken = authTokenMatch1 != null ? authTokenMatch1 : authTokenMatch2;
+      if (typeof console !== "undefined" && console !== null) {
+        console.info("Got auth token " + authToken.slice(0, 6) + "...");
+      }
+      return authToken;
+    })["catch"](function(request) {
+      if (typeof console !== "undefined" && console !== null) {
+        console.error('Failed to get auth token');
+      }
+      return client.handleError(request);
+    });
+  },
+  _getBearerToken: function() {
+    var data;
+    if (typeof console !== "undefined" && console !== null) {
+      console.log('Getting bearer token');
+    }
+    if (this._bearerToken) {
+      if (typeof console !== "undefined" && console !== null) {
+        console.info('Already had a bearer token', this._bearerToken);
+      }
+      return Promise.resolve(this._bearerToken);
+    } else {
+      data = {
+        grant_type: 'password',
+        client_id: config.clientAppID
+      };
+      return makeHTTPRequest('POST', config.host + '/oauth/token', data, JSON_HEADERS).then((function(_this) {
+        return function(request) {
+          var token;
+          token = _this._handleNewBearerToken(request);
+          return typeof console !== "undefined" && console !== null ? console.info("Got bearer token " + token.slice(0, 6) + "...") : void 0;
+        };
+      })(this))["catch"](function(request) {
+        if (typeof console !== "undefined" && console !== null) {
+          console.error('Failed to get bearer token');
+        }
+        return client.handleError(request);
+      });
+    }
+  },
+  _handleNewBearerToken: function(request) {
+    var refresh, response, timeToRefresh;
+    response = JSON.parse(request.responseText);
+    this._bearerToken = response.access_token;
+    client.headers['Authorization'] = "Bearer " + this._bearerToken;
+    refresh = this._refreshBearerToken.bind(this, response.refresh_token);
+    timeToRefresh = (response.expires_in * 1000) - TOKEN_EXPIRATION_ALLOWANCE;
+    this._bearerRefreshTimeout = setTimeout(refresh, timeToRefresh);
+    return this._bearerToken;
+  },
+  _refreshBearerToken: function(refreshToken) {
+    var data;
+    data = {
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: config.clientAppID
+    };
+    return makeHTTPRequest('POST', config.host + '/oauth/token', data, JSON_HEADERS).then((function(_this) {
+      return function(request) {
+        var token;
+        token = _this._handleNewBearerToken(request);
+        return typeof console !== "undefined" && console !== null ? console.info("Refreshed bearer token " + token.slice(0, 6) + "...") : void 0;
+      };
+    })(this))["catch"](function(request) {
+      if (typeof console !== "undefined" && console !== null) {
+        console.error('Failed to refresh bearer token');
+      }
+      return client.handleError(request);
+    });
+  },
+  _deleteBearerToken: function() {
+    this._bearerToken = '';
+    delete client.headers['Authorization'];
+    clearTimeout(this._bearerRefreshTimeout);
+    return typeof console !== "undefined" && console !== null ? console.log('Deleted bearer token') : void 0;
+  },
+  _getSession: function() {
+    if (typeof console !== "undefined" && console !== null) {
+      console.log('Getting session');
+    }
+    return client.get('/me').then((function(_this) {
+      return function(arg) {
+        var user;
+        user = arg[0];
+        if (typeof console !== "undefined" && console !== null) {
+          console.info('Got session', user.login, user.id);
+        }
+        return user;
+      };
+    })(this))["catch"](function(error) {
+      if (typeof console !== "undefined" && console !== null) {
+        console.error('Failed to get session');
+      }
+      throw error;
+    });
+  },
+  register: function(arg) {
+    var beta_email_communication, credited_name, email, global_email_communication, login, password, project_id;
+    login = arg.login, email = arg.email, password = arg.password, credited_name = arg.credited_name, global_email_communication = arg.global_email_communication, project_id = arg.project_id, beta_email_communication = arg.beta_email_communication;
+    return this.checkCurrent().then((function(_this) {
+      return function(user) {
+        var registrationRequest;
+        if (user != null) {
+          return _this.signOut().then(function() {
+            return _this.register({
+              login: login,
+              email: email,
+              password: password
+            });
+          });
+        } else {
+          if (typeof console !== "undefined" && console !== null) {
+            console.log('Registering new account', login);
+          }
+          registrationRequest = _this._getAuthToken().then(function(token) {
+            var data;
+            data = {
+              authenticity_token: token,
+              user: {
+                login: login,
+                email: email,
+                password: password,
+                credited_name: credited_name,
+                global_email_communication: global_email_communication,
+                project_id: project_id,
+                beta_email_communication: beta_email_communication
+              }
+            };
+            return client.post('/../users', data, JSON_HEADERS).then(function() {
+              return _this._getBearerToken().then(function() {
+                return _this._getSession().then(function(user) {
+                  if (typeof console !== "undefined" && console !== null) {
+                    console.info('Registered account', user.login, user.id);
+                  }
+                  return user;
+                });
+              });
+            })["catch"](function(error) {
+              if (typeof console !== "undefined" && console !== null) {
+                console.error('Failed to register');
+              }
+              throw error;
+            });
+          });
+          _this.update({
+            _currentUserPromise: registrationRequest["catch"](function() {
+              return null;
+            })
+          });
+          return registrationRequest;
+        }
+      };
+    })(this));
+  },
+  checkCurrent: function() {
+    if (this._currentUserPromise == null) {
+      if (typeof console !== "undefined" && console !== null) {
+        console.log('Checking current user');
+      }
+      this.update({
+        _currentUserPromise: this._getBearerToken().then((function(_this) {
+          return function() {
+            return _this._getSession();
+          };
+        })(this))["catch"](function() {
+          if (typeof console !== "undefined" && console !== null) {
+            console.info('No current user');
+          }
+          return null;
+        })
+      });
+    }
+    return this._currentUserPromise;
+  },
+  signIn: function(arg) {
+    var login, password;
+    login = arg.login, password = arg.password;
+    return this.checkCurrent().then((function(_this) {
+      return function(user) {
+        var signInRequest;
+        if (user != null) {
+          return _this.signOut().then(function() {
+            return _this.signIn({
+              login: login,
+              password: password
+            });
+          });
+        } else {
+          if (typeof console !== "undefined" && console !== null) {
+            console.log('Signing in', login);
+          }
+          signInRequest = _this._getAuthToken().then(function(token) {
+            var data;
+            data = {
+              authenticity_token: token,
+              user: {
+                login: login,
+                password: password
+              }
+            };
+            return makeHTTPRequest('POST', config.host + '/users/sign_in', data, JSON_HEADERS).then(function() {
+              return _this._getBearerToken().then(function() {
+                return _this._getSession().then(function(user) {
+                  if (typeof console !== "undefined" && console !== null) {
+                    console.info('Signed in', user.login, user.id);
+                  }
+                  return user;
+                });
+              });
+            })["catch"](function(request) {
+              if (typeof console !== "undefined" && console !== null) {
+                console.error('Failed to sign in');
+              }
+              return client.handleError(request);
+            });
+          });
+          _this.update({
+            _currentUserPromise: signInRequest["catch"](function() {
+              return null;
+            })
+          });
+          return signInRequest;
+        }
+      };
+    })(this));
+  },
+  changePassword: function(arg) {
+    var current, replacement;
+    current = arg.current, replacement = arg.replacement;
+    return this.checkCurrent().then((function(_this) {
+      return function(user) {
+        if (user != null) {
+          return _this._getAuthToken().then(function(token) {
+            var data;
+            data = {
+              authenticity_token: token,
+              user: {
+                current_password: current,
+                password: replacement,
+                password_confirmation: replacement
+              }
+            };
+            return client.put('/../users', data, JSON_HEADERS).then(function() {
+              return _this.signOut();
+            }).then(function() {
+              var login, password;
+              login = user.login;
+              password = replacement;
+              return _this.signIn({
+                login: login,
+                password: password
+              });
+            });
+          });
+        } else {
+          throw new Error('No signed-in user to change the password for');
+        }
+      };
+    })(this));
+  },
+  requestPasswordReset: function(arg) {
+    var email;
+    email = arg.email;
+    return this._getAuthToken().then((function(_this) {
+      return function(token) {
+        var data;
+        data = {
+          authenticity_token: token,
+          user: {
+            email: email
+          }
+        };
+        return client.post('/../users/password', data, JSON_HEADERS);
+      };
+    })(this));
+  },
+  resetPassword: function(arg) {
+    var confirmation, password, resetToken;
+    password = arg.password, confirmation = arg.confirmation, resetToken = arg.token;
+    return this._getAuthToken().then((function(_this) {
+      return function(authToken) {
+        var data;
+        data = {
+          authenticity_token: authToken,
+          user: {
+            password: password,
+            password_confirmation: confirmation,
+            reset_password_token: resetToken
+          }
+        };
+        return client.put('/../users/password', data, JSON_HEADERS);
+      };
+    })(this));
+  },
+  disableAccount: function() {
+    if (typeof console !== "undefined" && console !== null) {
+      console.log('Disabling account');
+    }
+    return this.checkCurrent().then((function(_this) {
+      return function(user) {
+        if (user != null) {
+          return user["delete"]().then(function() {
+            _this._deleteBearerToken();
+            _this.update({
+              _currentUserPromise: Promise.resolve(null)
+            });
+            if (typeof console !== "undefined" && console !== null) {
+              console.info('Disabled account');
+            }
+            return null;
+          });
+        } else {
+          throw new Error('Failed to disable account; not signed in');
+        }
+      };
+    })(this));
+  },
+  signOut: function() {
+    if (typeof console !== "undefined" && console !== null) {
+      console.log('Signing out');
+    }
+    return this.checkCurrent().then((function(_this) {
+      return function(user) {
+        if (user != null) {
+          return _this._getAuthToken().then(function(token) {
+            var data;
+            data = {
+              authenticity_token: token
+            };
+            return makeHTTPRequest('POST', config.host + '/users/sign_out', data, DELETE_METHOD_OVERRIDE_HEADERS).then(function() {
+              _this._deleteBearerToken();
+              _this.update({
+                _currentUserPromise: Promise.resolve(null)
+              });
+              if (typeof console !== "undefined" && console !== null) {
+                console.info('Signed out');
+              }
+              return null;
+            })["catch"](function(request) {
+              if (typeof console !== "undefined" && console !== null) {
+                console.error('Failed to sign out');
+              }
+              return client.handleError(request);
+            });
+          });
+        } else {
+          throw new Error('Failed to sign out; not signed in');
+        }
+      };
+    })(this));
+  }
+});
+
+if (typeof window !== "undefined" && window !== null) {
+  window.zooAuth = module.exports;
+}
+
+if (typeof window !== "undefined" && window !== null) {
+  window.log = typeof console !== "undefined" && console !== null ? console.info.bind(console, 'LOG') : void 0;
+}
+
+if (typeof window !== "undefined" && window !== null) {
+  window.err = typeof console !== "undefined" && console !== null ? console.error.bind(console, 'ERR') : void 0;
+}
+
+
+
+},{"./client":2,"./config":3,"json-api-client":5}],2:[function(require,module,exports){
+var JSONAPIClient, Resource, apiClient, config, ref;
+
+JSONAPIClient = (ref = require('json-api-client'), Resource = ref.Resource, ref);
+
+config = require('./config');
+
+apiClient = new JSONAPIClient(config.host + '/api', {
+  'Content-Type': 'application/json',
+  'Accept': 'application/vnd.api+json; version=1'
+});
+
+apiClient.handleError = function(request) {
+  var error, errorMessage, key, message, ref1, ref2, ref3, response;
+  if ('message' in request) {
+    throw request;
+  } else if ('responseText' in request) {
+    response = (function() {
+      try {
+        return JSON.parse(request.responseText);
+      } catch (_error) {}
+    })();
+    if ((response != null ? response.error : void 0) != null) {
+      errorMessage = response.error;
+      if (response.error_description != null) {
+        errorMessage = errorMessage + " " + response.error_description;
+      }
+    } else if ((response != null ? (ref1 = response.errors) != null ? ref1[0].message : void 0 : void 0) != null) {
+      errorMessage = (function() {
+        var i, len, ref2, results;
+        ref2 = response.errors;
+        results = [];
+        for (i = 0, len = ref2.length; i < len; i++) {
+          message = ref2[i].message;
+          if (typeof message === 'string') {
+            results.push(message);
+          } else {
+            results.push(((function() {
+              var results1;
+              results1 = [];
+              for (key in message) {
+                error = message[key];
+                results1.push(key + " " + error);
+              }
+              return results1;
+            })()).join('\n'));
+          }
+        }
+        return results;
+      })();
+      errorMessage = errorMessage.join('\n');
+    }
+    if (((ref2 = request.responseText) != null ? ref2.indexOf('<!DOCTYPE') : void 0) !== -1) {
+      if (errorMessage == null) {
+        errorMessage = "There was a problem on the server. " + request.responseURL + " → " + request.status;
+      }
+    }
+    if (errorMessage == null) {
+      errorMessage = ((ref3 = request.responseText) != null ? ref3.trim() : void 0) || (request.status + " " + request.statusText);
+    }
+    throw new Error(errorMessage);
+  }
+};
+
+module.exports = apiClient;
+
+if (typeof window !== "undefined" && window !== null) {
+  window.zooAPI = apiClient;
+}
+
+
+
+},{"./config":3,"json-api-client":5}],3:[function(require,module,exports){
+(function (process){
+var API_APPLICATION_IDS, API_HOSTS, DEFAULT_ENV, TALK_HOSTS, appFromBrowser, appFromShell, env, envFromBrowser, envFromShell, hostFromBrowser, hostFromShell, ref, ref1, ref2, ref3, ref4, ref5, ref6, ref7, talkFromBrowser, talkFromShell;
+
+DEFAULT_ENV = 'staging';
+
+API_HOSTS = {
+  production: 'https://panoptes.zooniverse.org',
+  staging: 'https://panoptes-staging.zooniverse.org',
+  cam: 'http://172.17.2.87:3000'
+};
+
+API_APPLICATION_IDS = {
+  production: 'f79cf5ea821bb161d8cbb52d061ab9a2321d7cb169007003af66b43f7b79ce2a',
+  staging: '535759b966935c297be11913acee7a9ca17c025f9f15520e7504728e71110a27',
+  cam: '535759b966935c297be11913acee7a9ca17c025f9f15520e7504728e71110a27'
+};
+
+TALK_HOSTS = {
+  production: 'https://talk.zooniverse.org',
+  staging: 'https://talk-staging.zooniverse.org'
+};
+
+hostFromBrowser = typeof location !== "undefined" && location !== null ? (ref = location.search.match(/\W?panoptes-api-host=([^&]+)/)) != null ? ref[1] : void 0 : void 0;
+
+appFromBrowser = typeof location !== "undefined" && location !== null ? (ref1 = location.search.match(/\W?panoptes-api-application=([^&]+)/)) != null ? ref1[1] : void 0 : void 0;
+
+talkFromBrowser = typeof location !== "undefined" && location !== null ? (ref2 = location.search.match(/\W?talk-host=([^&]+)/)) != null ? ref2[1] : void 0 : void 0;
+
+hostFromShell = process.env.PANOPTES_API_HOST;
+
+appFromShell = process.env.PANOPTES_API_APPLICATION;
+
+talkFromShell = process.env.TALK_HOST;
+
+envFromBrowser = typeof location !== "undefined" && location !== null ? (ref3 = location.search.match(/\W?env=(\w+)/)) != null ? ref3[1] : void 0 : void 0;
+
+envFromShell = process.env.NODE_ENV;
+
+env = (ref4 = envFromBrowser != null ? envFromBrowser : envFromShell) != null ? ref4 : DEFAULT_ENV;
+
+module.exports = {
+  host: (ref5 = hostFromBrowser != null ? hostFromBrowser : hostFromShell) != null ? ref5 : API_HOSTS[env],
+  clientAppID: (ref6 = appFromBrowser != null ? appFromBrowser : appFromShell) != null ? ref6 : API_APPLICATION_IDS[env],
+  talkHost: (ref7 = talkFromBrowser != null ? talkFromBrowser : talkFromShell) != null ? ref7 : TALK_HOSTS[env]
+};
+
+
+
+}).call(this,require('_process'))
+},{"_process":4}],4:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -58,7 +588,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],2:[function(require,module,exports){
+},{}],5:[function(require,module,exports){
 (function (global){
 !function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.JSONAPIClient=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
 var DEFAULT_SIGNAL, Emitter, arraysMatch, callHandler,
@@ -478,7 +1008,7 @@ module.exports = function() {
 
 
 },{}],5:[function(_dereq_,module,exports){
-var Emitter, Model, isIndex, mergeInto, removeUnderscoredKeys,
+var Emitter, Model, mergeInto,
   __hasProp = {}.hasOwnProperty,
   __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
   __slice = [].slice,
@@ -488,11 +1018,75 @@ Emitter = _dereq_('./emitter');
 
 mergeInto = _dereq_('./merge-into');
 
-isIndex = function(string) {
-  var integer;
-  integer = Math.abs(parseInt(string, 10));
-  return integer.toString(10) === string && !isNaN(integer);
-};
+module.exports = Model = (function(_super) {
+  __extends(Model, _super);
+
+  Model.prototype._changedKeys = null;
+
+  function Model() {
+    var configs;
+    configs = 1 <= arguments.length ? __slice.call(arguments, 0) : [];
+    Model.__super__.constructor.apply(this, arguments);
+    this._changedKeys = [];
+    mergeInto.apply(null, [this].concat(__slice.call(configs)));
+    this.emit('create');
+  }
+
+  Model.prototype.update = function(changeSet) {
+    var base, key, lastKey, path, rootKey, value, _i, _len, _ref;
+    if (changeSet == null) {
+      changeSet = {};
+    }
+    if (typeof changeSet === 'string') {
+      for (_i = 0, _len = arguments.length; _i < _len; _i++) {
+        key = arguments[_i];
+        if (__indexOf.call(this._changedKeys, key) < 0) {
+          (_ref = this._changedKeys).push.apply(_ref, arguments);
+        }
+      }
+    } else {
+      for (key in changeSet) {
+        if (!__hasProp.call(changeSet, key)) continue;
+        value = changeSet[key];
+        path = key.split('.');
+        rootKey = path[0];
+        base = this;
+        while (path.length !== 1) {
+          base = base[path.shift()];
+        }
+        lastKey = path.shift();
+        if (value === void 0) {
+          delete base[lastKey];
+        } else {
+          base[lastKey] = value;
+        }
+        if (__indexOf.call(this._changedKeys, rootKey) < 0) {
+          this._changedKeys.push(rootKey);
+        }
+      }
+    }
+    this.emit('change');
+    return this;
+  };
+
+  Model.prototype.hasUnsavedChanges = function() {
+    return this._changedKeys.length !== 0;
+  };
+
+  return Model;
+
+})(Emitter);
+
+
+
+},{"./emitter":1,"./merge-into":4}],6:[function(_dereq_,module,exports){
+var Model, PLACEHOLDERS_PATTERN, Resource, ResourcePromise, removeUnderscoredKeys,
+  __hasProp = {}.hasOwnProperty,
+  __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
+  __slice = [].slice,
+  __modulo = function(a, b) { return (+a % (b = +b) + b) % b; };
+
+Model = _dereq_('./model');
 
 removeUnderscoredKeys = function(target) {
   var key, results, value, _i, _len, _results;
@@ -516,83 +1110,6 @@ removeUnderscoredKeys = function(target) {
     return target;
   }
 };
-
-module.exports = Model = (function(_super) {
-  __extends(Model, _super);
-
-  Model.prototype._changedKeys = null;
-
-  function Model() {
-    var configs;
-    configs = 1 <= arguments.length ? __slice.call(arguments, 0) : [];
-    Model.__super__.constructor.apply(this, arguments);
-    this._changedKeys = [];
-    mergeInto.apply(null, [this].concat(__slice.call(configs)));
-    this.emit('create');
-  }
-
-  Model.prototype.update = function(changeSet) {
-    var base, key, lastKey, path, rootKey, value, _i, _len, _name, _ref;
-    if (changeSet == null) {
-      changeSet = {};
-    }
-    if (typeof changeSet === 'string') {
-      for (_i = 0, _len = arguments.length; _i < _len; _i++) {
-        key = arguments[_i];
-        if (__indexOf.call(this._changedKeys, key) < 0) {
-          (_ref = this._changedKeys).push.apply(_ref, arguments);
-        }
-      }
-    } else {
-      for (key in changeSet) {
-        if (!__hasProp.call(changeSet, key)) continue;
-        value = changeSet[key];
-        path = key.split('.');
-        rootKey = path[0];
-        base = this;
-        while (path.length !== 1) {
-          if (base[_name = path[0]] == null) {
-            base[_name] = isIndex(path[0]) ? [] : {};
-          }
-          base = base[path.shift()];
-        }
-        lastKey = path.shift();
-        if (value === void 0) {
-          delete base[lastKey];
-        } else {
-          base[lastKey] = value;
-        }
-        if (__indexOf.call(this._changedKeys, rootKey) < 0) {
-          this._changedKeys.push(rootKey);
-        }
-      }
-    }
-    this.emit('change');
-    return this;
-  };
-
-  Model.prototype.hasUnsavedChanges = function() {
-    return this._changedKeys.length !== 0;
-  };
-
-  Model.prototype.toJSON = function() {
-    return removeUnderscoredKeys(this);
-  };
-
-  return Model;
-
-})(Emitter);
-
-
-
-},{"./emitter":1,"./merge-into":4}],6:[function(_dereq_,module,exports){
-var Model, PLACEHOLDERS_PATTERN, Resource, ResourcePromise,
-  __hasProp = {}.hasOwnProperty,
-  __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  __slice = [].slice,
-  __modulo = function(a, b) { return (+a % (b = +b) + b) % b; };
-
-Model = _dereq_('./model');
 
 PLACEHOLDERS_PATTERN = /{(.+?)}/g;
 
@@ -640,7 +1157,7 @@ Resource = (function(_super) {
   Resource.prototype.save = function() {
     var payload, save;
     payload = {};
-    payload[this._type._name] = this.toJSON.call(this.getChangesSinceSave());
+    payload[this._type._name] = removeUnderscoredKeys(this.getChangesSinceSave());
     save = this.id ? this.refresh(true).then((function(_this) {
       return function() {
         return _this._type._client.put(_this._getURL(), payload, _this._getHeadersForModification());
@@ -1067,452 +1584,7 @@ module.exports = Type = (function(_super) {
 });
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],3:[function(require,module,exports){
-var CSRF_TOKEN_PATTERN, DELETE_METHOD_OVERRIDE_HEADERS, JSON_HEADERS, Model, TOKEN_EXPIRATION_ALLOWANCE, client, config, makeHTTPRequest, ref;
-
-ref = require('json-api-client'), Model = ref.Model, makeHTTPRequest = ref.makeHTTPRequest;
-
-config = require('./config');
-
-client = require('./client');
-
-JSON_HEADERS = {
-  'Content-Type': 'application/json',
-  'Accept': 'application/json'
-};
-
-DELETE_METHOD_OVERRIDE_HEADERS = Object.create(JSON_HEADERS);
-
-DELETE_METHOD_OVERRIDE_HEADERS['X-HTTP-Method-Override'] = 'DELETE';
-
-CSRF_TOKEN_PATTERN = (function() {
-  var CONTENT_ATTR, NAME_ATTR;
-  NAME_ATTR = 'name=[\'"]csrf-token[\'"]';
-  CONTENT_ATTR = 'content=[\'"](.+)[\'"]';
-  return RegExp(NAME_ATTR + "\\s*" + CONTENT_ATTR + "|" + CONTENT_ATTR + "\\s*" + NAME_ATTR);
-})();
-
-TOKEN_EXPIRATION_ALLOWANCE = 10 * 1000;
-
-module.exports = new Model({
-  _currentUserPromise: null,
-  _bearerToken: '',
-  _bearerRefreshTimeout: NaN,
-  _getAuthToken: function() {
-    if (typeof console !== "undefined" && console !== null) {
-      console.log('Getting auth token');
-    }
-    return makeHTTPRequest('GET', config.host + ("/?now=" + (Date.now())), null, {
-      'Accept': 'text/html'
-    }).then(function(request) {
-      var _, authToken, authTokenMatch1, authTokenMatch2, ref1;
-      ref1 = request.responseText.match(CSRF_TOKEN_PATTERN), _ = ref1[0], authTokenMatch1 = ref1[1], authTokenMatch2 = ref1[2];
-      authToken = authTokenMatch1 != null ? authTokenMatch1 : authTokenMatch2;
-      if (typeof console !== "undefined" && console !== null) {
-        console.info("Got auth token " + authToken.slice(0, 6) + "...");
-      }
-      return authToken;
-    })["catch"](function(request) {
-      if (typeof console !== "undefined" && console !== null) {
-        console.error('Failed to get auth token');
-      }
-      return client.handleError(request);
-    });
-  },
-  _getBearerToken: function() {
-    var data;
-    if (typeof console !== "undefined" && console !== null) {
-      console.log('Getting bearer token');
-    }
-    if (this._bearerToken) {
-      if (typeof console !== "undefined" && console !== null) {
-        console.info('Already had a bearer token', this._bearerToken);
-      }
-      return Promise.resolve(this._bearerToken);
-    } else {
-      data = {
-        grant_type: 'password',
-        client_id: config.clientAppID
-      };
-      return makeHTTPRequest('POST', config.host + '/oauth/token', data, JSON_HEADERS).then((function(_this) {
-        return function(request) {
-          var token;
-          token = _this._handleNewBearerToken(request);
-          return typeof console !== "undefined" && console !== null ? console.info("Got bearer token " + token.slice(0, 6) + "...") : void 0;
-        };
-      })(this))["catch"](function(request) {
-        if (typeof console !== "undefined" && console !== null) {
-          console.error('Failed to get bearer token');
-        }
-        return client.handleError(request);
-      });
-    }
-  },
-  _handleNewBearerToken: function(request) {
-    var refresh, response, timeToRefresh;
-    response = JSON.parse(request.responseText);
-    this._bearerToken = response.access_token;
-    client.headers['Authorization'] = "Bearer " + this._bearerToken;
-    refresh = this._refreshBearerToken.bind(this, response.refresh_token);
-    timeToRefresh = (response.expires_in * 1000) - TOKEN_EXPIRATION_ALLOWANCE;
-    this._bearerRefreshTimeout = setTimeout(refresh, timeToRefresh);
-    return this._bearerToken;
-  },
-  _refreshBearerToken: function(refreshToken) {
-    var data;
-    data = {
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-      client_id: config.clientAppID
-    };
-    return makeHTTPRequest('POST', config.host + '/oauth/token', data, JSON_HEADERS).then((function(_this) {
-      return function(request) {
-        var token;
-        token = _this._handleNewBearerToken(request);
-        return typeof console !== "undefined" && console !== null ? console.info("Refreshed bearer token " + token.slice(0, 6) + "...") : void 0;
-      };
-    })(this))["catch"](function(request) {
-      if (typeof console !== "undefined" && console !== null) {
-        console.error('Failed to refresh bearer token');
-      }
-      return client.handleError(request);
-    });
-  },
-  _deleteBearerToken: function() {
-    this._bearerToken = '';
-    delete client.headers['Authorization'];
-    clearTimeout(this._bearerRefreshTimeout);
-    return typeof console !== "undefined" && console !== null ? console.log('Deleted bearer token') : void 0;
-  },
-  _getSession: function() {
-    if (typeof console !== "undefined" && console !== null) {
-      console.log('Getting session');
-    }
-    return client.get('/me').then((function(_this) {
-      return function(arg) {
-        var user;
-        user = arg[0];
-        if (typeof console !== "undefined" && console !== null) {
-          console.info('Got session', user.display_name, user.id);
-        }
-        return user;
-      };
-    })(this))["catch"](function(error) {
-      if (typeof console !== "undefined" && console !== null) {
-        console.error('Failed to get session');
-      }
-      throw error;
-    });
-  },
-  register: function(arg) {
-    var display_name, email, global_email_communication, password;
-    display_name = arg.display_name, email = arg.email, password = arg.password, global_email_communication = arg.global_email_communication;
-    return this.checkCurrent().then((function(_this) {
-      return function(user) {
-        var registrationRequest;
-        if (user != null) {
-          return _this.signOut().then(function() {
-            return _this.register({
-              display_name: display_name,
-              email: email,
-              password: password
-            });
-          });
-        } else {
-          if (typeof console !== "undefined" && console !== null) {
-            console.log('Registering new account', display_name);
-          }
-          registrationRequest = _this._getAuthToken().then(function(token) {
-            var data;
-            data = {
-              authenticity_token: token,
-              user: {
-                display_name: display_name,
-                email: email,
-                password: password,
-                global_email_communication: global_email_communication
-              }
-            };
-            return client.post('/../users', data, JSON_HEADERS).then(function() {
-              return _this._getBearerToken().then(function() {
-                return _this._getSession().then(function(user) {
-                  if (typeof console !== "undefined" && console !== null) {
-                    console.info('Registered account', user.display_name, user.id);
-                  }
-                  return user;
-                });
-              });
-            })["catch"](function(error) {
-              if (typeof console !== "undefined" && console !== null) {
-                console.error('Failed to register');
-              }
-              throw error;
-            });
-          });
-          _this.update({
-            _currentUserPromise: registrationRequest["catch"](function() {
-              return null;
-            })
-          });
-          return registrationRequest;
-        }
-      };
-    })(this));
-  },
-  checkCurrent: function() {
-    if (this._currentUserPromise == null) {
-      if (typeof console !== "undefined" && console !== null) {
-        console.log('Checking current user');
-      }
-      this.update({
-        _currentUserPromise: this._getBearerToken().then((function(_this) {
-          return function() {
-            return _this._getSession();
-          };
-        })(this))["catch"](function() {
-          if (typeof console !== "undefined" && console !== null) {
-            console.info('No current user');
-          }
-          return null;
-        })
-      });
-    }
-    return this._currentUserPromise;
-  },
-  signIn: function(arg) {
-    var display_name, password;
-    display_name = arg.display_name, password = arg.password;
-    return this.checkCurrent().then((function(_this) {
-      return function(user) {
-        var signInRequest;
-        if (user != null) {
-          return _this.signOut().then(function() {
-            return _this.signIn({
-              display_name: display_name,
-              password: password
-            });
-          });
-        } else {
-          if (typeof console !== "undefined" && console !== null) {
-            console.log('Signing in', display_name);
-          }
-          signInRequest = _this._getAuthToken().then(function(token) {
-            var data;
-            data = {
-              authenticity_token: token,
-              user: {
-                display_name: display_name,
-                password: password
-              }
-            };
-            return makeHTTPRequest('POST', config.host + '/users/sign_in', data, JSON_HEADERS).then(function() {
-              return _this._getBearerToken().then(function() {
-                return _this._getSession().then(function(user) {
-                  if (typeof console !== "undefined" && console !== null) {
-                    console.info('Signed in', user.display_name, user.id);
-                  }
-                  return user;
-                });
-              });
-            })["catch"](function(request) {
-              if (typeof console !== "undefined" && console !== null) {
-                console.error('Failed to sign in');
-              }
-              return client.handleError(request);
-            });
-          });
-          _this.update({
-            _currentUserPromise: signInRequest["catch"](function() {
-              return null;
-            })
-          });
-          return signInRequest;
-        }
-      };
-    })(this));
-  },
-  disableAccount: function() {
-    if (typeof console !== "undefined" && console !== null) {
-      console.log('Disabling account');
-    }
-    return this.checkCurrent().then((function(_this) {
-      return function(user) {
-        if (user != null) {
-          return user["delete"]().then(function() {
-            _this._deleteBearerToken();
-            _this.update({
-              _currentUserPromise: Promise.resolve(null)
-            });
-            if (typeof console !== "undefined" && console !== null) {
-              console.info('Disabled account');
-            }
-            return null;
-          });
-        } else {
-          throw new Error('Failed to disable account; not signed in');
-        }
-      };
-    })(this));
-  },
-  signOut: function() {
-    if (typeof console !== "undefined" && console !== null) {
-      console.log('Signing out');
-    }
-    return this.checkCurrent().then((function(_this) {
-      return function(user) {
-        if (user != null) {
-          return _this._getAuthToken().then(function(token) {
-            var data;
-            data = {
-              authenticity_token: token
-            };
-            return makeHTTPRequest('POST', config.host + '/users/sign_out', data, DELETE_METHOD_OVERRIDE_HEADERS).then(function() {
-              _this._deleteBearerToken();
-              _this.update({
-                _currentUserPromise: Promise.resolve(null)
-              });
-              if (typeof console !== "undefined" && console !== null) {
-                console.info('Signed out');
-              }
-              return null;
-            })["catch"](function(request) {
-              if (typeof console !== "undefined" && console !== null) {
-                console.error('Failed to sign out');
-              }
-              return client.handleError(request);
-            });
-          });
-        } else {
-          throw new Error('Failed to sign out; not signed in');
-        }
-      };
-    })(this));
-  }
-});
-
-if (typeof window !== "undefined" && window !== null) {
-  window.zooAuth = module.exports;
-}
-
-if (typeof window !== "undefined" && window !== null) {
-  window.log = typeof console !== "undefined" && console !== null ? console.info.bind(console, 'LOG') : void 0;
-}
-
-if (typeof window !== "undefined" && window !== null) {
-  window.err = typeof console !== "undefined" && console !== null ? console.error.bind(console, 'ERR') : void 0;
-}
-
-
-
-},{"./client":4,"./config":5,"json-api-client":2}],4:[function(require,module,exports){
-var JSONAPIClient, Resource, apiClient, config, ref;
-
-JSONAPIClient = (ref = require('json-api-client'), Resource = ref.Resource, ref);
-
-config = require('./config');
-
-apiClient = new JSONAPIClient(config.host + '/api', {
-  'Content-Type': 'application/json',
-  'Accept': 'application/vnd.api+json; version=1'
-});
-
-apiClient.handleError = function(request) {
-  var error, errorMessage, key, message, ref1, ref2, ref3, response;
-  response = (function() {
-    try {
-      return JSON.parse(request.responseText);
-    } catch (_error) {}
-  })();
-  if ((response != null ? response.error : void 0) != null) {
-    errorMessage = response.error;
-    if (response.error_description != null) {
-      errorMessage = errorMessage + " " + response.error_description;
-    }
-  } else if ((response != null ? (ref1 = response.errors) != null ? ref1[0].message : void 0 : void 0) != null) {
-    errorMessage = (function() {
-      var i, len, ref2, results;
-      ref2 = response.errors;
-      results = [];
-      for (i = 0, len = ref2.length; i < len; i++) {
-        message = ref2[i].message;
-        if (typeof message === 'string') {
-          results.push(message);
-        } else {
-          results.push(((function() {
-            var results1;
-            results1 = [];
-            for (key in message) {
-              error = message[key];
-              results1.push(key + " " + error);
-            }
-            return results1;
-          })()).join('\n'));
-        }
-      }
-      return results;
-    })();
-    errorMessage = errorMessage.join('\n');
-  }
-  if (((ref2 = request.responseText) != null ? ref2.indexOf('<!DOCTYPE') : void 0) !== -1) {
-    if (errorMessage == null) {
-      errorMessage = "There was a problem on the server. " + request.responseURL + " → " + request.status;
-    }
-  }
-  if (errorMessage == null) {
-    errorMessage = ((ref3 = request.responseText) != null ? ref3.trim() : void 0) || (request.status + " " + request.statusText);
-  }
-  throw new Error(errorMessage);
-};
-
-module.exports = apiClient;
-
-if (typeof window !== "undefined" && window !== null) {
-  window.zooAPI = apiClient;
-}
-
-
-
-},{"./config":5,"json-api-client":2}],5:[function(require,module,exports){
-(function (process){
-var API_APPLICATION_IDS, API_HOSTS, DEFAULT_ENV, appFromBrowser, appFromShell, env, envFromBrowser, envFromShell, hostFromBrowser, hostFromShell, ref, ref1, ref2, ref3, ref4, ref5;
-
-DEFAULT_ENV = 'staging';
-
-API_HOSTS = {
-  production: 'https://panoptes.zooniverse.org',
-  staging: 'https://panoptes-staging.zooniverse.org',
-  cam: 'http://172.17.2.87:3000'
-};
-
-API_APPLICATION_IDS = {
-  production: 'f79cf5ea821bb161d8cbb52d061ab9a2321d7cb169007003af66b43f7b79ce2a',
-  staging: '535759b966935c297be11913acee7a9ca17c025f9f15520e7504728e71110a27',
-  cam: '535759b966935c297be11913acee7a9ca17c025f9f15520e7504728e71110a27'
-};
-
-hostFromBrowser = typeof location !== "undefined" && location !== null ? (ref = location.search.match(/\W?panoptes-api-host=([^&]+)/)) != null ? ref[1] : void 0 : void 0;
-
-appFromBrowser = typeof location !== "undefined" && location !== null ? (ref1 = location.search.match(/\W?panoptes-api-application=([^&]+)/)) != null ? ref1[1] : void 0 : void 0;
-
-hostFromShell = process.env.PANOPTES_API_HOST;
-
-appFromShell = process.env.PANOPTES_API_APPLICATION;
-
-envFromBrowser = typeof location !== "undefined" && location !== null ? (ref2 = location.search.match(/\W?env=(\w+)/)) != null ? ref2[1] : void 0 : void 0;
-
-envFromShell = process.env.NODE_ENV;
-
-env = (ref3 = envFromBrowser != null ? envFromBrowser : envFromShell) != null ? ref3 : DEFAULT_ENV;
-
-module.exports = {
-  host: (ref4 = hostFromBrowser != null ? hostFromBrowser : hostFromShell) != null ? ref4 : API_HOSTS[env],
-  clientAppID: (ref5 = appFromBrowser != null ? appFromBrowser : appFromShell) != null ? ref5 : API_APPLICATION_IDS[env]
-};
-
-
-
-}).call(this,require('_process'))
-},{"_process":1}],"/src/index.coffee":[function(require,module,exports){
+},{}],"/lib/index.coffee":[function(require,module,exports){
 module.exports = {
   auth: require('./api/auth'),
   api: require('./api/client')
@@ -1520,5 +1592,5 @@ module.exports = {
 
 
 
-},{"./api/auth":3,"./api/client":4}]},{},[])("/src/index.coffee")
+},{"./api/auth":1,"./api/client":2}]},{},[])("/lib/index.coffee")
 });
