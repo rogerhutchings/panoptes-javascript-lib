@@ -2,6 +2,8 @@
 
 A wrapper around the zooAuth and zooAPI modules by @brian-c.
 
+**Now deprecated: use [zooniverse/panoptes-javascript-client](https://github.com/zooniverse/panoptes-javascript-client) instead!**
+
 ## Installation
 
 Node: `npm install panoptes-javascript-lib`
